@@ -7,6 +7,7 @@
 #include "Button.hpp"
 
 #include <2d/CCSprite.h>
+#include <2d/CCCamera.h>
 
 #include <base/CCDirector.h>
 #include <base/CCEventDispatcher.h>
@@ -14,17 +15,6 @@
 #include <base/CCEventCustom.h>
 
 using namespace custom_ui;
-
-constexpr auto press_event_name = "button_pressed_event";
-
-namespace common
-{
-    bool checkRectAndPoint(cocos2d::Vec2 rect_pos, cocos2d::Size rect_size, cocos2d::Point point)
-    {
-        cocos2d::Rect rect{{rect_pos - (rect_size / 2.f)}, rect_size};
-        return rect.containsPoint(point);
-    }
-}
 
 Button* Button::create()
 {
@@ -60,17 +50,18 @@ Button* Button::setNormalImage(const std::string& file)
         if (auto old = m_stateView.find(eButtonState::IDLE); old != m_stateView.end())
             this->removeChild(old->second);
         
-        m_stateView[eButtonState::IDLE] = sprite;
+        m_stateView.insert_or_assign(eButtonState::IDLE, sprite);
+        
+        m_stateView.try_emplace(eButtonState::PRESSED, sprite);
+        m_stateView.try_emplace(eButtonState::DRAGOUT, sprite);
+
         addChild(sprite);
-        
-        if (m_stateView.find(eButtonState::PRESSED) == m_stateView.end())
-            m_stateView[eButtonState::PRESSED] = sprite;
-        
-        if (m_stateView.find(eButtonState::DRAGOUT) == m_stateView.end())
-            m_stateView[eButtonState::DRAGOUT] = sprite;
         
         setExpandZone(getContentSize());
         setSafeZone(getContentSize());
+        
+        sprite->setVisible(true);
+        sprite->setAnchorPoint({0.5f, 0.5f});
     }
     
     return this;
@@ -87,14 +78,13 @@ Button* Button::setPressedImage(const std::string& file)
                 if (old->second != old_idle->second)
                     this->removeChild(old->second);
             }
-            
-            m_stateView.erase(eButtonState::PRESSED);
         }
         
-        m_stateView[eButtonState::PRESSED] = sprite;
+        m_stateView.insert_or_assign(eButtonState::PRESSED, sprite);
         addChild(sprite);
         
         sprite->setVisible(false);
+        sprite->setAnchorPoint({0.5f, 0.5f});
     }
         
     return this;
@@ -111,14 +101,13 @@ Button* Button::setDragoutImage(const std::string& file)
                 if (old->second != old_idle->second)
                     this->removeChild(old->second);
             }
-            
-            m_stateView.erase(eButtonState::DRAGOUT);
         }
         
-        m_stateView[eButtonState::DRAGOUT] = sprite;
+        m_stateView.insert_or_assign(eButtonState::DRAGOUT, sprite);
         addChild(sprite);
         
         sprite->setVisible(false);
+        sprite->setAnchorPoint({0.5f, 0.5f});
     }
         
     return this;
@@ -168,24 +157,14 @@ cocos2d::Node* Button::getDragoutNode() const {
     return getStateNode(eButtonState::DRAGOUT);
 }
 
-cocos2d::Size Button::getSafeZone() const {
-    return m_safeZone;
-}
-
-cocos2d::Size Button::getExpandZone() const {
-    return m_expandZone;
-}
-
-bool Button::isButtonPressed() const {
+bool Button::isPressed() const {
     return m_currentState == eButtonState::PRESSED;
-}
-
-bool Button::isButtonDragout() const {
-    return m_currentState == eButtonState::DRAGOUT;
 }
 
 Button::Button() noexcept
 {
+    setAnchorPoint({0.5f, 0.5f});
+    
     auto dispatcher = cocos2d::Director::getInstance()->getEventDispatcher();
     auto listener   = cocos2d::EventListenerTouchOneByOne::create();
 
@@ -196,52 +175,41 @@ Button::Button() noexcept
     dispatcher->addEventListenerWithSceneGraphPriority(listener, this);
 }
 
-void Button::onPressed()
+void Button::sendEvent(ButtonEventData_t data)
 {
-    if (getTouchAccepted() == false)
-        return;
-    
-    ButtonEventData_t data;
-    data.sender = this;
-    
-    cocos2d::EventCustom event(getPressedEventName());
+    cocos2d::EventCustom event(data.event_name);
     event.setUserData(&data);
     
-    cocos2d::Director::getInstance()->getEventDispatcher()->dispatchEvent(&event);
+    _eventDispatcher->dispatchEvent(&event);
     
     if (m_callback) m_callback(this);
 }
 
-void Button::switchState(eButtonState next_state)
+void Button::setState(eButtonState next_state)
 {
     for (const auto& [state, node] : m_stateView)
         node->setVisible(state == next_state);
+    
+    m_currentState = next_state;
 }
 
-bool Button::getTouchAccepted() const
-{
-    return true;
-}
-
-const std::string Button::getPressedEventName() const
-{
-    return press_event_name;
+bool Button::touchTest(cocos2d::Rect rect, cocos2d::Point point) {
+    return isScreenPointInRect(point, cocos2d::Camera::getVisitingCamera(), getWorldToNodeTransform(), rect, nullptr);
 }
 
 bool Button::onTouchBegan(cocos2d::Touch* touch, cocos2d::Event* event)
 {
     auto touch_pos = touch->getLocation();
     
-    auto content_size = getContentSize();
-    auto position     = getPosition();
+    cocos2d::Rect base_rect{getNormalNode()->getPosition() - getContentSize() / 2.f, getContentSize()};
+    cocos2d::Rect expand_rect{getNormalNode()->getPosition() - m_expandZone / 2.f, m_expandZone};
     
-    if (common::checkRectAndPoint(position, content_size, touch_pos) ||
-        common::checkRectAndPoint(position, m_expandZone, touch_pos))
+    if (touchTest(base_rect, touch_pos) || touchTest(expand_rect, touch_pos))
     {
-        switchState(eButtonState::PRESSED);
+        setState(eButtonState::PRESSED);
         return true;
     }
-    
+
     return false;
 }
 
@@ -249,40 +217,33 @@ void Button::onTouchMoved(cocos2d::Touch* touch, cocos2d::Event* event)
 {
     auto touch_pos = touch->getLocation();
     
-    auto content_size = getContentSize();
-    auto position     = getPosition();
+    cocos2d::Rect base_rect{getNormalNode()->getPosition() - getContentSize() / 2.f, getContentSize()};
+    cocos2d::Rect expand_rect{getNormalNode()->getPosition() - m_expandZone / 2.f, m_expandZone};
+    cocos2d::Rect safe_rect{getNormalNode()->getPosition() - m_safeZone / 2.f, m_safeZone};
     
-    if (common::checkRectAndPoint(position, content_size, touch_pos) ||
-        common::checkRectAndPoint(position, m_expandZone, touch_pos))
+    if (touchTest(base_rect, touch_pos) || touchTest(expand_rect, touch_pos))
     {
         if (m_currentState != eButtonState::PRESSED)
-            switchState(eButtonState::PRESSED);
+            setState(eButtonState::PRESSED);
     }
-    else if (common::checkRectAndPoint(position, m_safeZone, touch_pos))
+    else if (touchTest(safe_rect, touch_pos))
     {
         if (m_currentState != eButtonState::DRAGOUT)
-            switchState(eButtonState::DRAGOUT);
+            setState(eButtonState::DRAGOUT);
+    }
+    else
+    {
+        setState(eButtonState::IDLE);
     }
 }
 
 void Button::onTouchEnded(cocos2d::Touch* touch, cocos2d::Event* event)
 {
-    auto touch_pos = touch->getLocation();
+    if (isPressed())
+        sendEvent({this, press_event_name});
     
-    auto content_size = getContentSize();
-    auto position     = getPosition();
-    
-    if (common::checkRectAndPoint(position, content_size, touch_pos) ||
-        common::checkRectAndPoint(position, m_expandZone, touch_pos))
-    {
-        onPressed();
-    }
-    
-    switchState(eButtonState::IDLE);
+    setState(eButtonState::IDLE);
 }
-
-void Button::onTouchCancelled(cocos2d::Touch* touch, cocos2d::Event* event)
-{}
 
 cocos2d::Node* Button::getStateNode(eButtonState state) const
 {

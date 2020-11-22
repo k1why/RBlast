@@ -6,12 +6,15 @@
 
 #include "LongPressButton.hpp"
 
+#include <base/CCDirector.h>
+#include <base/CCEventCustom.h>
+#include <base/CCEventDispatcher.h>
+
 #include <2d/CCActionInterval.h>
 #include <2d/CCActionInstant.h>
 
-using namespace custom_ui;
 
-constexpr auto long_press_event_name = "button_long_pressed_event";
+using namespace custom_ui;
 
 LongPressButton* LongPressButton::create(float duration)
 {
@@ -48,11 +51,6 @@ void LongPressButton::setPressDuration(float duration) {
     m_pressDuration = duration;
 }
 
-const std::string LongPressButton::getPressedEventName() const
-{
-    return long_press_event_name;
-}
-
 float LongPressButton::getPressDuration() const {
     return m_pressDuration;
 }
@@ -60,19 +58,16 @@ float LongPressButton::getPressDuration() const {
 LongPressButton::LongPressButton(float duration) noexcept
     : Button()
     , m_pressDuration(duration)
+    , m_isLongTouch(false)
 {}
-
-bool LongPressButton::getTouchAccepted() const {
-    return m_touchAccepted;
-}
 
 bool LongPressButton::onTouchBegan(cocos2d::Touch* touch, cocos2d::Event* event)
 {
     bool touched = Button::onTouchBegan(touch, event);
     if (touched == true)
     {
-        this->runAction(cocos2d::Sequence::create(cocos2d::DelayTime::create(m_pressDuration), cocos2d::CallFunc::create([this](){
-            m_touchAccepted = true;
+        m_longPressAction = this->runAction(cocos2d::Sequence::create(cocos2d::DelayTime::create(m_pressDuration), cocos2d::CallFunc::create([this](){
+            m_isLongTouch = true;
         }), NULL));
     }
     
@@ -81,7 +76,13 @@ bool LongPressButton::onTouchBegan(cocos2d::Touch* touch, cocos2d::Event* event)
 
 void LongPressButton::onTouchEnded(cocos2d::Touch* touch, cocos2d::Event* event)
 {
-    Button::onTouchEnded(touch, event);
-    m_touchAccepted = false;
+    stopAction(m_longPressAction);
+    m_longPressAction = nullptr;
+    
+    if (isPressed())
+        sendEvent({this, m_isLongTouch ? long_press_event_name : press_event_name});
+    
+    setState(eButtonState::IDLE);
+    m_isLongTouch = false;
 }
 
