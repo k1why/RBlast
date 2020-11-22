@@ -29,9 +29,7 @@ bool TestScene::init()
     if (!Scene::init())
         return false;
     
-    setupUI();
-    
-    return true;
+    return setupUI();
 }
 
 bool TestScene::setupUI()
@@ -133,14 +131,4 @@ bool TestScene::setupUI()
     _eventDispatcher->addEventListenerWithSceneGraphPriority(listiner_long_press, this);
     
     return true;
-}
-
-bool TestScene::onTouchBegan(cocos2d::Touch* touch, cocos2d::Event* event)
-{
-    return true;
-}
-
-void TestScene::onTouchMoved(cocos2d::Touch* touch, cocos2d::Event* event)
-{
-
 }

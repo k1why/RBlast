@@ -34,9 +34,6 @@ namespace test_env
     private:
         bool setupUI();
         
-        virtual bool onTouchBegan(cocos2d::Touch* touch, cocos2d::Event* event);
-        virtual void onTouchMoved(cocos2d::Touch* touch, cocos2d::Event* event);
-        
     private:
         cocos2d::Label* m_eventLabel;
         

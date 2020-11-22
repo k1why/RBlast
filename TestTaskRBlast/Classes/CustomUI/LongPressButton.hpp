@@ -8,8 +8,14 @@
 
 #include "Button.hpp"
 
+namespace cocos2d
+{
+    class Action;
+}
+
 namespace custom_ui
 {
+    constexpr auto long_press_event_name = "button_long_pressed_event";
     constexpr float default_duration = 2.f;
 
     class LongPressButton : public Button
@@ -19,22 +25,19 @@ namespace custom_ui
         static LongPressButton* create(const std::string& normal, const std::string& pressed, const std::string& dragout, float duration);
         static LongPressButton* create(const std::string& normal, const std::string& pressed, const std::string& dragout, const buttonCallback& callback, float duration);
         
-        void setPressDuration(float duration);
-        
-        virtual const std::string getPressedEventName() const override;
-        
+        void  setPressDuration(float duration);
         float getPressDuration() const;
         
     protected:
         explicit LongPressButton(float duration) noexcept;
-        
-        virtual bool getTouchAccepted() const override;
         
         virtual bool onTouchBegan(cocos2d::Touch* touch, cocos2d::Event* event) override;
         virtual void onTouchEnded(cocos2d::Touch* touch, cocos2d::Event* event) override;
         
     private:
         float m_pressDuration;
-        bool  m_touchAccepted;
+        bool  m_isLongTouch;
+        
+        cocos2d::Action* m_longPressAction;
     };
 }
